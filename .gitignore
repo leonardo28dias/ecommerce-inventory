@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / debug
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+docs/_build/
+.MPython
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.my-venv/
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# pytest
+.pytest_cache/
+test-results/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS / misc
+.DS_Store
+*.log
+.coverage
+htmlcov/
+*.sqlite
+
+# Local Docker override
+docker-compose.override.yml
+
+# Local runtime artifacts (e.g. Erlang crash dumps from local RabbitMQ experiments)
+erl_crash.dump
+*.dump

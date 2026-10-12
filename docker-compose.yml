@@ -1,0 +1,167 @@
+services:
+  # ---------------------------------------------------------------------------
+  # order-db — PostgreSQL database for the order service (separate datastore)
+  # ---------------------------------------------------------------------------
+  order-db:
+    image: postgres:16-alpine
+    container_name: be3-order-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ORDER_DB_NAME:-orderdb}
+      POSTGRES_USER: ${ORDER_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:-postgres}
+    ports:
+      # Host port (psql from your machine) -> container port 5432
+      - ${ORDER_DB_HOST_PORT:-54321}:5432
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ORDER_DB_USER:-postgres} -d ${ORDER_DB_NAME:-orderdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # inventory-db — PostgreSQL database for the inventory service (separate datastore)
+  # ---------------------------------------------------------------------------
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: be3-inventory-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${INVENTORY_DB_NAME:-inventorydb}
+      POSTGRES_USER: ${INVENTORY_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-postgres}
+    ports:
+      # Host port (psql from your machine) -> container port 5432
+      - ${INVENTORY_DB_HOST_PORT:-54322}:5432
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INVENTORY_DB_USER:-postgres} -d ${INVENTORY_DB_NAME:-inventorydb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # rabbitmq — shared message broker with management UI for local dev
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: be3-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # order-service — FastAPI HTTP API + publisher for OrderCreated events
+  # ---------------------------------------------------------------------------
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: be3-order-service
+    restart: unless-stopped
+    ports:
+      - ${ORDER_SERVICE_PORT:-8001}:8001
+    environment:
+      # Docker service names + container ports (fixed by the topology)
+      ORDER_DB_HOST: order-db
+      ORDER_DB_PORT: "5432"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_UI_PORT: "15672"
+      # Names and credentials are read from .env so they always match the
+      # database / broker services, which use the very same variables.
+      ORDER_DB_NAME: ${ORDER_DB_NAME:-orderdb}
+      ORDER_DB_USER: ${ORDER_DB_USER:-postgres}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:-postgres}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      order-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # inventory-service — FastAPI HTTP API + RabbitMQ consumer for StockReserved/
+  # StockRejected events, using PostgreSQL SELECT FOR UPDATE for locking.
+  # ---------------------------------------------------------------------------
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: be3-inventory-service
+    restart: unless-stopped
+    ports:
+      - ${INVENTORY_SERVICE_PORT:-8002}:8002
+    environment:
+      # Docker service names + container ports (fixed by the topology)
+      INVENTORY_DB_HOST: inventory-db
+      INVENTORY_DB_PORT: "5432"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_UI_PORT: "15672"
+      # Names and credentials are read from .env so they always match the
+      # database / broker services, which use the very same variables.
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME:-inventorydb}
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER:-postgres}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:-postgres}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  order_db_data:
+  inventory_db_data:
