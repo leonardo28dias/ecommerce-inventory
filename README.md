@@ -1,4 +1,4 @@
-# BE-3 — Event-Driven Multi-Tenant E-Commerce Order & Inventory System
+# Event-Driven Multi-Tenant E-Commerce Order & Inventory System
 
 A production-style portfolio backend that turns an HTTP `POST /orders` into an
 **asynchronous, exactly-once** stock reservation through RabbitMQ and a
